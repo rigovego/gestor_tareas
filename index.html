@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestor de tareas</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      background: #f4f4f4;
+      color: #222;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      font-size: 28px;
+    }
+
+    form {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    input, select, button {
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: #2563eb;
+      color: white;
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+      color: white;
+    }
+
+    .btn-danger {
+      background: #dc2626;
+      color: white;
+    }
+
+    .btn-warning {
+      background: #d97706;
+      color: white;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .message {
+      margin-bottom: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .message.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .message.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+
+    th, td {
+      border-bottom: 1px solid #ddd;
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f9fafb;
+    }
+
+    .status {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 14px;
+      display: inline-block;
+    }
+
+    .pendiente {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .en_proceso {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .completada {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .detail-box {
+      margin-top: 24px;
+      padding: 16px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+
+    .detail-box h2 {
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 14px;
+    }
+
+    @media (max-width: 768px) {
+      table, thead, tbody, th, td, tr {
+        display: block;
+      }
+
+      thead {
+        display: none;
+      }
+
+      tr {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        padding: 12px;
+        background: #fff;
+      }
+
+      td {
+        border: none;
+        padding: 8px 0;
+      }
+
+      td::before {
+        content: attr(data-label);
+        font-weight: bold;
+        display: block;
+        margin-bottom: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Gestor de tareas</h1>
+
+    <div id="message" class="message"></div>
+
+    <form id="taskForm">
+      <input type="hidden" id="taskId" />
+
+      <input
+        type="text"
+        id="title"
+        placeholder="Título de la tarea"
+        required
+      />
+
+      <select id="status" required>
+        <option value="">Selecciona un estado</option>
+        <option value="pendiente">Pendiente</option>
+        <option value="en_proceso">En proceso</option>
+        <option value="completada">Completada</option>
+      </select>
+
+      <div class="actions">
+        <button type="submit" class="btn-primary" id="saveBtn">Guardar</button>
+        <button type="button" class="btn-secondary" id="cancelBtn">Cancelar</button>
+      </div>
+    </form>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Título</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tasksTableBody"></tbody>
+    </table>
+
+    <div class="detail-box" id="detailBox" style="display: none;">
+      <h2>Detalle de tarea</h2>
+      <p><strong>ID:</strong> <span id="detailId"></span></p>
+      <p><strong>Título:</strong> <span id="detailTitle"></span></p>
+      <p><strong>Estado:</strong> <span id="detailStatus"></span></p>
+      <p><strong>Fecha:</strong> <span id="detailCreatedAt"></span></p>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "AQUI_TU_SUPABASE_URL";
+    const SUPABASE_ANON_KEY = "AQUI_TU_SUPABASE_ANON_KEY";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const taskForm = document.getElementById("taskForm");
+    const taskIdInput = document.getElementById("taskId");
+    const titleInput = document.getElementById("title");
+    const statusInput = document.getElementById("status");
+    const tasksTableBody = document.getElementById("tasksTableBody");
+    const cancelBtn = document.getElementById("cancelBtn");
+    const messageBox = document.getElementById("message");
+
+    const detailBox = document.getElementById("detailBox");
+    const detailId = document.getElementById("detailId");
+    const detailTitle = document.getElementById("detailTitle");
+    const detailStatus = document.getElementById("detailStatus");
+    const detailCreatedAt = document.getElementById("detailCreatedAt");
+
+    function showMessage(text, type = "success") {
+      messageBox.textContent = text;
+      messageBox.className = `message ${type}`;
+      messageBox.style.display = "block";
+
+      setTimeout(() => {
+        messageBox.style.display = "none";
+      }, 3000);
+    }
+
+    function resetForm() {
+      taskIdInput.value = "";
+      titleInput.value = "";
+      statusInput.value = "";
+      detailBox.style.display = "none";
+    }
+
+    function formatStatus(status) {
+      if (status === "pendiente") return "Pendiente";
+      if (status === "en_proceso") return "En proceso";
+      if (status === "completada") return "Completada";
+      return status;
+    }
+
+    async function loadTasks() {
+      const { data, error } = await supabaseClient
+        .from("tasks")
+        .select("*")
+        .order("id", { ascending: true });
+
+      if (error) {
+        showMessage("Error al cargar tareas", "error");
+        return;
+      }
+
+      tasksTableBody.innerHTML = "";
+
+      data.forEach(task => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+          <td data-label="ID">${task.id}</td>
+          <td data-label="Título">${task.title}</td>
+          <td data-label="Estado">
+            <span class="status ${task.status}">${formatStatus(task.status)}</span>
+          </td>
+          <td data-label="Acciones">
+            <div class="actions">
+              <button class="btn-secondary" onclick="viewTask(${task.id})">Ver</button>
+              <button class="btn-warning" onclick="editTask(${task.id})">Editar</button>
+              <button class="btn-danger" onclick="deleteTask(${task.id})">Eliminar</button>
+            </div>
+          </td>
+        `;
+
+        tasksTableBody.appendChild(tr);
+      });
+    }
+
+    async function viewTask(id) {
+      const { data, error } = await supabaseClient
+        .from("tasks")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error) {
+        showMessage("Error al consultar la tarea", "error");
+        return;
+      }
+
+      detailId.textContent = data.id;
+      detailTitle.textContent = data.title;
+      detailStatus.textContent = formatStatus(data.status);
+      detailCreatedAt.textContent = new Date(data.created_at).toLocaleString();
+      detailBox.style.display = "block";
+    }
+
+    async function editTask(id) {
+      const { data, error } = await supabaseClient
+        .from("tasks")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error) {
+        showMessage("Error al cargar la tarea", "error");
+        return;
+      }
+
+      taskIdInput.value = data.id;
+      titleInput.value = data.title;
+      statusInput.value = data.status;
+      detailBox.style.display = "none";
+      titleInput.focus();
+    }
+
+    async function deleteTask(id) {
+      const confirmed = confirm("¿Deseas eliminar esta tarea?");
+      if (!confirmed) return;
+
+      const { error } = await supabaseClient
+        .from("tasks")
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        showMessage("Error al eliminar la tarea", "error");
+        return;
+      }
+
+      showMessage("Tarea eliminada correctamente");
+      resetForm();
+      loadTasks();
+    }
+
+    taskForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const id = taskIdInput.value;
+      const title = titleInput.value.trim();
+      const status = statusInput.value;
+
+      if (!title || !status) {
+        showMessage("Completa todos los campos", "error");
+        return;
+      }
+
+      if (id) {
+        const { error } = await supabaseClient
+          .from("tasks")
+          .update({ title, status })
+          .eq("id", id);
+
+        if (error) {
+          showMessage("Error al actualizar la tarea", "error");
+          return;
+        }
+
+        showMessage("Tarea actualizada correctamente");
+      } else {
+        const { error } = await supabaseClient
+          .from("tasks")
+          .insert([{ title, status }]);
+
+        if (error) {
+          showMessage("Error al guardar la tarea", "error");
+          return;
+        }
+
+        showMessage("Tarea guardada correctamente");
+      }
+
+      resetForm();
+      loadTasks();
+    });
+
+    cancelBtn.addEventListener("click", () => {
+      resetForm();
+    });
+
+    loadTasks();
+  </script>
+</body>
+</html>
